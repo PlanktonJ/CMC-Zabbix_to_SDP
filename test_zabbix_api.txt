@@ -1,0 +1,106 @@
+================================================================
+ZABBIX API CURL TEST COMMANDS
+Replace: ZABBIX_URL, AUTH_TOKEN, HOST_IDS, GROUP_ID
+================================================================
+
+
+1. user.login
+----------------------------------------------------------------
+curl -s -X POST "ZABBIX_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method":  "user.login",
+    "params":  { "user": "Admin", "password": "zabbix" },
+    "auth":    null,
+    "id":      1
+  }'
+
+
+2. host.get  (get_hosts — all hosts)
+----------------------------------------------------------------
+curl -s -X POST "ZABBIX_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method":  "host.get",
+    "params":  {
+      "output":           ["hostid","host","name","status","description"],
+      "selectInterfaces": ["ip","dns","type","main","useip"],
+      "selectGroups":     ["name"]
+    },
+    "auth": "AUTH_TOKEN",
+    "id":   2
+  }'
+
+
+3. item.get  (get_items — monitoring items for given host IDs)
+----------------------------------------------------------------
+curl -s -X POST "ZABBIX_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method":  "item.get",
+    "params":  {
+      "output":  ["hostid","name","key_","lastvalue","units"],
+      "hostids": ["HOST_ID_1","HOST_ID_2"],
+      "filter":  {
+        "key_": [
+          "vm.memory.size[total]",
+          "vfs.fs.size[/,total]",
+          "system.cpu.num",
+          "system.uname"
+        ]
+      }
+    },
+    "auth": "AUTH_TOKEN",
+    "id":   3
+  }'
+
+
+4. hostgroup.get  (get_host_groups — all groups that have hosts)
+----------------------------------------------------------------
+curl -s -X POST "ZABBIX_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method":  "hostgroup.get",
+    "params":  {
+      "output":     ["groupid","name"],
+      "real_hosts": true,
+      "sortfield":  "name"
+    },
+    "auth": "AUTH_TOKEN",
+    "id":   4
+  }'
+
+
+5. host.get  (get_hosts_by_group — hosts in one group)
+----------------------------------------------------------------
+curl -s -X POST "ZABBIX_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method":  "host.get",
+    "params":  {
+      "output":           ["hostid","host","name","status","description"],
+      "selectInterfaces": ["ip","dns","type","main","useip"],
+      "selectGroups":     ["name"],
+      "groupids":         ["GROUP_ID"]
+    },
+    "auth": "AUTH_TOKEN",
+    "id":   5
+  }'
+
+
+6. user.logout
+----------------------------------------------------------------
+curl -s -X POST "ZABBIX_URL" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method":  "user.logout",
+    "params":  [],
+    "auth":    "AUTH_TOKEN",
+    "id":      6
+  }'
