@@ -72,3 +72,11 @@ python3 test_name_cpu.py --json
 ## SNMP CPU Key
 Most devices monitored via SNMP — CPU item key is `system.cpu.num[snmp]`.
 Fallback for agent-monitored hosts: `system.cpu.num`.
+
+## Before Any Git Push
+Always replace live credentials with placeholders before committing:
+- `ZABBIX_URL` → `"http://YOUR_ZABBIX_HOST/api_jsonrpc.php"`
+- `ZABBIX_TOKEN` → `"YOUR_ZABBIX_API_TOKEN"`
+- `SDP_URL` → `"https://YOUR_SDP_HOST/api/v3/"`
+- `SDP_API_KEY` → `"YOUR_SDP_API_KEY"`
+- Same applies to any Postman collection variables with real IPs or keys.
