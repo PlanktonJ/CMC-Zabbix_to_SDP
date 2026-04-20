@@ -30,11 +30,11 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # CONFIG  — fill in before running
 # ──────────────────────────────────────────────
 
-ZABBIX_URL   = "http://172.28.236.10:8080/api_jsonrpc.php"
-ZABBIX_TOKEN = "a8ced8eb0354440a58893bcdefd825d9db76bb01e1c35b2a2ba925e51f662cca"
+ZABBIX_URL   = "http://YOUR_ZABBIX_HOST/api_jsonrpc.php"
+ZABBIX_TOKEN = "YOUR_ZABBIX_API_TOKEN"
 
-SDP_URL     = "https://172.28.236.13:8080/api/v3/"
-SDP_API_KEY = "0D8F0D17-C950-4C25-BF3F-2BE8C9FB93BA"
+SDP_URL     = "https://YOUR_SDP_HOST/api/v3/"
+SDP_API_KEY = "YOUR_SDP_API_KEY"
 SDP_MODULE  = "cmdb_server"
 
 ITEM_KEY_CPU_SNMP  = "system.cpu.num[snmp]"
