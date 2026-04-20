@@ -1,0 +1,286 @@
+{
+  "info": {
+    "_postman_id": "849bdf2a-26e7-4021-98f5-ff9a22eae3f3",
+    "name": "Test: name + udf_cpu sync",
+    "description": "Flow: 1-Login 2-hostgroup.get 3-host.get 4-item.get(cpu) 5-Logout | 6-SDP search 7-SDP create 8-SDP update. Run in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "32652683"
+  },
+  "variable": [
+    { "key": "zabbix_url",  "value": "http://172.28.236.10:8080/api_jsonrpc.php" },
+    { "key": "sdp_url",     "value": "https://172.28.236.13:8080/api/v3" },
+    { "key": "sdp_api_key", "value": "0D8F0D17-C950-4C25-BF3F-2BE8C9FB93BA" },
+    { "key": "auth_token",  "value": "" },
+    { "key": "group_id",    "value": "" },
+    { "key": "host_id",     "value": "" },
+    { "key": "ci_id",       "value": "" }
+  ],
+  "item": [
+    {
+      "name": "ZABBIX",
+      "item": [
+        {
+          "name": "1. Zabbix login (saves auth_token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "if (body.result) {",
+                  "    pm.collectionVariables.set('auth_token', body.result);",
+                  "    console.log('auth_token saved:', body.result);",
+                  "} else {",
+                  "    console.error('Login failed:', JSON.stringify(body.error));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"user.login\",\n  \"params\": {\n    \"user\": \"YOUR_ZABBIX_USER\",\n    \"password\": \"YOUR_ZABBIX_PASSWORD\"\n  },\n  \"auth\": null,\n  \"id\": 1\n}"
+            },
+            "url": { "raw": "{{zabbix_url}}", "host": ["{{zabbix_url}}"] }
+          },
+          "response": []
+        },
+        {
+          "name": "2. hostgroup.get — all groups (saves group_id of first)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "var groups = body.result || [];",
+                  "if (groups.length > 0) {",
+                  "    pm.collectionVariables.set('group_id', groups[0].groupid);",
+                  "    console.log('Total groups:', groups.length);",
+                  "    console.log('--- Group list ---');",
+                  "    groups.forEach(function(g) {",
+                  "        console.log('groupid:', g.groupid, '| name:', g.name);",
+                  "    });",
+                  "    console.log('group_id set to first:', groups[0].groupid, '(' + groups[0].name + ')');",
+                  "    console.log('To use a different group: set group_id variable manually.');",
+                  "} else {",
+                  "    console.error('No groups returned.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"hostgroup.get\",\n  \"params\": {\n    \"output\": [\"groupid\", \"name\"],\n    \"real_hosts\": true,\n    \"sortfield\": \"name\"\n  },\n  \"auth\": \"{{auth_token}}\",\n  \"id\": 2\n}"
+            },
+            "url": { "raw": "{{zabbix_url}}", "host": ["{{zabbix_url}}"] }
+          },
+          "response": []
+        },
+        {
+          "name": "3. host.get — hosts in selected group (saves first host_id)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "var gid = pm.collectionVariables.get('group_id');",
+                  "if (!gid) { console.error('ERROR: group_id empty. Run request 2 first.'); }"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "var hosts = body.result || [];",
+                  "if (hosts.length > 0) {",
+                  "    pm.collectionVariables.set('host_id', hosts[0].hostid);",
+                  "    console.log('Hosts in group:', hosts.length);",
+                  "    console.log('--- Host list ---');",
+                  "    hosts.forEach(function(h) {",
+                  "        var status = h.status === '0' ? 'monitored' : 'not_monitored';",
+                  "        console.log('hostid:', h.hostid, '| host:', h.host, '| status:', status);",
+                  "    });",
+                  "    console.log('host_id set to first:', hosts[0].hostid, '(' + hosts[0].host + ')');",
+                  "} else {",
+                  "    console.warn('No hosts in this group.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"host.get\",\n  \"params\": {\n    \"output\": [\"hostid\", \"host\", \"name\", \"status\"],\n    \"groupids\": [\"{{group_id}}\"]\n  },\n  \"auth\": \"{{auth_token}}\",\n  \"id\": 3\n}"
+            },
+            "url": { "raw": "{{zabbix_url}}", "host": ["{{zabbix_url}}"] }
+          },
+          "response": []
+        },
+        {
+          "name": "4. item.get — cpu keys for selected host_id",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "var hid = pm.collectionVariables.get('host_id');",
+                  "if (!hid) { console.error('ERROR: host_id empty. Run request 3 first.'); }"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "var items = body.result || [];",
+                  "if (items.length > 0) {",
+                  "    items.forEach(function(item) {",
+                  "        console.log('hostid:', item.hostid, '| key:', item.key_, '| cpu value (-> udf_cmdb_3974):', item.lastvalue);",
+                  "    });",
+                  "} else {",
+                  "    console.warn('No cpu item found for this host.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"item.get\",\n  \"params\": {\n    \"output\": [\"hostid\", \"key_\", \"lastvalue\"],\n    \"hostids\": [\"{{host_id}}\"],\n    \"filter\": { \"key_\": [\"system.cpu.num\", \"system.cpu.num[snmp]\"] }\n  },\n  \"auth\": \"{{auth_token}}\",\n  \"id\": 4\n}"
+            },
+            "url": { "raw": "{{zabbix_url}}", "host": ["{{zabbix_url}}"] }
+          },
+          "response": []
+        },
+        {
+          "name": "5. Zabbix logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"user.logout\",\n  \"params\": [],\n  \"auth\": \"{{auth_token}}\",\n  \"id\": 5\n}"
+            },
+            "url": { "raw": "{{zabbix_url}}", "host": ["{{zabbix_url}}"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "SDP",
+      "item": [
+        {
+          "name": "6. SDP — search CI by udf_hostname",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var body = pm.response.json();",
+                  "var list = body['cmdb_server'] || [];",
+                  "if (list.length > 0) {",
+                  "    pm.collectionVariables.set('ci_id', list[0].id);",
+                  "    console.log('CI found — id:', list[0].id);",
+                  "    console.log('name:', list[0].name);",
+                  "    console.log('udf_hostname:', list[0].udf_fields && list[0].udf_fields.udf_hostname);",
+                  "    console.log('udf_cmdb_3974 (cpu):', list[0].udf_fields && list[0].udf_fields.udf_cmdb_3974);",
+                  "    console.log('udf_cmdb_4049:', list[0].udf_fields && list[0].udf_fields.udf_cmdb_4049 && list[0].udf_fields.udf_cmdb_4049.name);",
+                  "} else {",
+                  "    console.log('No CI found for this hostname.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "technician_key", "value": "{{sdp_api_key}}" }],
+            "url": {
+              "raw": "{{sdp_url}}/cmdb_server?input_data={\"list_info\":{\"row_count\":1,\"start_index\":1,\"search_criteria\":[{\"field\":\"udf_hostname\",\"condition\":\"is\",\"value\":\"REPLACE_WITH_HOSTNAME\"}]}}",
+              "host": ["{{sdp_url}}"],
+              "path": ["cmdb_server"],
+              "query": [
+                {
+                  "key": "input_data",
+                  "value": "{\"list_info\":{\"row_count\":1,\"start_index\":1,\"search_criteria\":[{\"field\":\"udf_hostname\",\"condition\":\"is\",\"value\":\"REPLACE_WITH_HOSTNAME\"}]}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7. SDP — POST create CI",
+          "description": "Creates a new CI. Payload mirrors sync_name_cpu.py create_ci().",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "technician_key", "value": "{{sdp_api_key}}" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "input_data",
+                  "value": "{\n  \"cmdb_server\": {\n    \"name\": \"REPLACE_WITH_HOSTNAME\",\n    \"udf_fields\": {\n      \"udf_cmdb_3974\": \"REPLACE_WITH_CPU_COUNT\",\n      \"udf_cmdb_4049\": { \"name\": \"V\\u1eadt L\\u00fd\" }\n    }\n  }\n}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sdp_url}}/cmdb_server",
+              "host": ["{{sdp_url}}"],
+              "path": ["cmdb_server"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "8. SDP — PUT update name + udf_cmdb_3974 (cpu)",
+          "description": "Updates existing CI. Payload mirrors sync_name_cpu.py update_ci().",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "technician_key", "value": "{{sdp_api_key}}" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "input_data",
+                  "value": "{\n  \"cmdb_server\": {\n    \"name\": \"REPLACE_WITH_HOSTNAME\",\n    \"udf_fields\": {\n      \"udf_cmdb_3974\": \"REPLACE_WITH_CPU_COUNT\",\n      \"udf_cmdb_4049\": { \"name\": \"V\\u1eadt L\\u00fd\" }\n    }\n  }\n}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sdp_url}}/cmdb_server/{{ci_id}}",
+              "host": ["{{sdp_url}}"],
+              "path": ["cmdb_server", "{{ci_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
