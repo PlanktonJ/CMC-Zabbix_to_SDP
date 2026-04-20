@@ -76,10 +76,11 @@ PHYS_VIRT_ID = {
 # ──────────────────────────────────────────────
 
 ITEM_KEYS = [
-    "vm.memory.size[total]",  # Total RAM bytes -> GB integer string
-    "vfs.fs.size[/,total]",   # Total root disk bytes -> GB label e.g. "100G"
-    "system.cpu.num",         # CPU core count
-    "system.uname",           # Full OS/kernel string
+    "vm.memory.size[total]",    # Total RAM bytes -> GB integer string
+    "vfs.fs.size[/,total]",     # Total root disk bytes -> GB label e.g. "100G"
+    "system.cpu.num",           # CPU core count (Zabbix agent)
+    "system.cpu.num[snmp]",     # CPU core count (SNMP hosts)
+    "system.uname",             # Full OS/kernel string
 ]
 
 # ──────────────────────────────────────────────
@@ -317,7 +318,8 @@ def build_host_records(hosts: list[dict], items: list[dict]) -> list[dict]:
 
         ram_raw  = h_items.get("vm.memory.size[total]", {}).get("lastvalue", "")
         disk_raw = h_items.get("vfs.fs.size[/,total]",  {}).get("lastvalue", "")
-        cpu_raw  = h_items.get("system.cpu.num",        {}).get("lastvalue", "")
+        cpu_raw  = (h_items.get("system.cpu.num[snmp]", {}).get("lastvalue", "")
+                    or h_items.get("system.cpu.num",       {}).get("lastvalue", ""))
         uname    = h_items.get("system.uname",          {}).get("lastvalue", "")
 
         records.append({
@@ -325,7 +327,7 @@ def build_host_records(hosts: list[dict], items: list[dict]) -> list[dict]:
             "hostname":      host["host"],          # Zabbix technical name = udf_hostname
 
             # ── Zabbix-owned top-level SDP fields ──
-            "name":          host["name"],          # Zabbix display name -> SDP 'name'
+            "name":          host["host"],          # Zabbix technical hostname -> SDP 'name'
             "description":   host.get("description") or "",
             "is_inactive":   not is_monitored,      # Zabbix disabled -> SDP inactive=true
 
