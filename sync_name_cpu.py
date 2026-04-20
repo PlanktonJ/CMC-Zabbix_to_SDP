@@ -33,7 +33,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 ZABBIX_URL   = "http://YOUR_ZABBIX_HOST/api_jsonrpc.php"
 ZABBIX_TOKEN = "YOUR_ZABBIX_API_TOKEN"
 
-SDP_URL     = "https://YOUR_SDP_HOST/api/v3/"
+SDP_URL     = "https://YOUR_SDP_HOST/api/v3"
 SDP_API_KEY = "YOUR_SDP_API_KEY"
 SDP_MODULE  = "cmdb_server"
 
@@ -136,7 +136,7 @@ class SDPAPI:
                 "row_count":   1,
                 "start_index": 1,
                 "search_criteria": [
-                    {"field": "udf_hostname", "condition": "is", "value": hostname}
+                    {"field": "name", "condition": "is", "value": hostname}
                 ],
             }
         }
