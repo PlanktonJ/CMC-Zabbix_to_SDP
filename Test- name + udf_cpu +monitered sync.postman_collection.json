@@ -7,9 +7,9 @@
     "_exporter_id": "32652683"
   },
   "variable": [
-    { "key": "zabbix_url",  "value": "http://172.28.236.10:8080/api_jsonrpc.php" },
-    { "key": "sdp_url",     "value": "https://172.28.236.13:8080/api/v3" },
-    { "key": "sdp_api_key", "value": "0D8F0D17-C950-4C25-BF3F-2BE8C9FB93BA" },
+    { "key": "zabbix_url",  "value": "" },
+    { "key": "sdp_url",     "value": "" },
+    { "key": "sdp_api_key", "value": "" },
     { "key": "auth_token",  "value": "" },
     { "key": "group_id",    "value": "" },
     { "key": "host_id",     "value": "" },
