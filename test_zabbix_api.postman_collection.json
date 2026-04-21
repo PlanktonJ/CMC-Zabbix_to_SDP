@@ -10,7 +10,7 @@
   "variable": [
     {
       "key": "zabbix_url",
-      "value": "http://172.28.236.10:8080/api_jsonrpc.php"
+      "value": ""
     },
     {
       "key": "auth_token",
