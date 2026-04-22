@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 sync_name_cpu.py
-Pulls name + udf_cpu from Zabbix for a selected group, upserts into SDP CMDB.
+Pulls name + udf_cpu + OS + memory + IP + hostname from Zabbix for a selected group,
+upserts into SDP CMDB.
 
 Flow:
   STEP 1 — fetch host groups, prompt user to pick one
   STEP 2 — fetch all hosts in that group
-  STEP 3 — fetch CPU items for all hosts
-  STEP 4 — upsert to SDP: match on name -> update name + udf_cpu
-            if not found in SDP -> skip (log warning, do not create)
+  STEP 3 — fetch CPU / OS / memory / hostname items for all hosts
+  STEP 4 — upsert to SDP: match on name -> update fields
+            if not found in SDP -> create new CI
 
 Usage:
   python3 sync_name_cpu.py               # interactive, live upsert
@@ -35,10 +36,21 @@ ZABBIX_TOKEN = "YOUR_ZABBIX_API_TOKEN"
 
 SDP_URL     = "https://YOUR_SDP_HOST/api/v3"
 SDP_API_KEY = "YOUR_SDP_API_KEY"
-SDP_MODULE  = "cmdb_server"
+SDP_MODULE  = "cmdb_nb_noc_sysapi"
 
-ITEM_KEY_CPU_SNMP  = "system.cpu.num[snmp]"
-ITEM_KEY_CPU_AGENT = "system.cpu.num"
+# CPU item keys — SNMP_PRIORITY_KEY is preferred when both exist on a host
+ITEM_KEY_CPU_SNMP    = ["system.cpu.num", "system.cpu.num[snmp]"]
+SNMP_PRIORITY_KEY    = "system.cpu.num[snmp]"   # used for priority comparison
+
+ITEM_KEY_OS          = "net.if.osversion"
+ITEM_SEARCH_MEMORY   = ["total memory"]
+ITEM_KEY_HOSTNAME    = "system.name"
+
+# Zabbix host status → SDP monitoring label
+STATUS_MAP = {
+    "0": "Đã giám sát",      # enabled  (monitored)
+    "1": "Không giám sát",   # disabled (not monitored)
+}
 
 # ──────────────────────────────────────────────
 # LOGGING
@@ -99,17 +111,40 @@ class ZabbixAPI:
         })
 
     def get_hosts_by_group(self, group_id: str) -> list[dict]:
+        """Returns hosts with embedded interfaces (IP already included) and status."""
         return self._call("host.get", {
-            "output":    ["hostid", "host", "status"],
-            "groupids":  [group_id],
-            "sortfield": "host",
+            "output":           ["hostid", "host", "status"],
+            "groupids":         [group_id],
+            "sortfield":        "host",
+            "selectInterfaces": ["ip"],
         })
 
-    def get_cpu_items(self, host_ids: list[str]) -> list[dict]:
+    def get_cpu(self, host_ids: list[str]) -> list[dict]:
         return self._call("item.get", {
             "output":  ["hostid", "key_", "lastvalue"],
             "hostids": host_ids,
-            "filter":  {"key_": [ITEM_KEY_CPU_SNMP, ITEM_KEY_CPU_AGENT]},
+            "filter":  {"key_": ITEM_KEY_CPU_SNMP},
+        })
+
+    def get_os(self, host_ids: list[str]) -> list[dict]:
+        return self._call("item.get", {
+            "output":  ["hostid", "key_", "lastvalue"],
+            "hostids": host_ids,
+            "filter":  {"key_": [ITEM_KEY_OS]},
+        })
+
+    def get_mem(self, host_ids: list[str]) -> list[dict]:
+        return self._call("item.get", {
+            "output":  ["hostid", "name", "lastvalue"],
+            "hostids": host_ids,
+            "search":  {"name": ITEM_SEARCH_MEMORY},
+        })
+
+    def get_hostname(self, host_ids: list[str]) -> list[dict]:
+        return self._call("item.get", {
+            "output":  ["hostid", "key_", "lastvalue"],
+            "hostids": host_ids,
+            "filter":  {"key_": ITEM_KEY_HOSTNAME},
         })
 
 
@@ -118,7 +153,7 @@ class ZabbixAPI:
 # ──────────────────────────────────────────────
 
 class SDPAPI:
-    """SDP CMDB client — update name + udf_cpu only."""
+    """SDP CMDB client — upsert CI with name + udf_fields."""
 
     def __init__(self, base_url: str, api_key: str):
         self.base    = base_url.rstrip("/")
@@ -155,8 +190,13 @@ class SDPAPI:
             SDP_MODULE: {
                 "name": record["name"],
                 "udf_fields": {
-                    "udf_cmdb_3974": record["udf_cpu"],
-                    "udf_cmdb_4049": {"name": "Vật Lý"},
+                    "udf_cpu":                  record["udf_cpu"],
+                    "udf_ip_private":           record["udf_ip"],
+                    "udf_ip_gi_m_s_t":          record["udf_ip"],
+                    "udf_cmdb_4018":            record["udf_os"],
+                    "udf_vram":                 record["udf_mem"],
+                    "udf_hostname":             record["udf_hostname"],
+                    "udf_t_nh_tr_ng_gi_m_s_t": {"name": record["udf_status"]},
                 },
             }
         }
@@ -205,22 +245,61 @@ def prompt_group(groups: list[dict]) -> dict:
 
 
 # ──────────────────────────────────────────────
+# HELPERS
+# ──────────────────────────────────────────────
+
+def bytes_to_gb(value: str) -> str:
+    """Convert Zabbix lastvalue (bytes string) to rounded GB string, e.g. '16.00 GB'."""
+    try:
+        gb = int(value) / (1024 ** 3)
+        return f"{gb:.2f} GB"
+    except (ValueError, TypeError):
+        return "N/A"
+
+
+# ──────────────────────────────────────────────
 # BUILD RECORDS
 # ──────────────────────────────────────────────
 
-def build_records(hosts: list[dict], cpu_items: list[dict]) -> list[dict]:
-    # SNMP key takes priority; agent key is fallback
+def build_records(
+    hosts: list[dict],
+    cpu_items: list[dict],
+    os_items: list[dict],
+    mem_items: list[dict],
+    hostname_items: list[dict],
+) -> list[dict]:
+    # CPU: SNMP_PRIORITY_KEY takes priority over agent key
     cpu_by_host: dict[str, str] = {}
     for item in cpu_items:
         hid = item["hostid"]
-        if item["key_"] == ITEM_KEY_CPU_SNMP or hid not in cpu_by_host:
+        if item["key_"] == SNMP_PRIORITY_KEY or hid not in cpu_by_host:
             cpu_by_host[hid] = item["lastvalue"]
+
+    os_by_host: dict[str, str] = {}
+    for item in os_items:
+        hid = item["hostid"]
+        os_by_host[hid] = item["lastvalue"]
+
+    mem_by_host: dict[str, str] = {}
+    for item in mem_items:
+        hid = item["hostid"]
+        mem_by_host[hid] = item["lastvalue"]
+
+    hostname_by_host: dict[str, str] = {}
+    for item in hostname_items:
+        hid = item["hostid"]
+        hostname_by_host[hid] = item["lastvalue"]
 
     return [
         {
-            "hostid":  h["hostid"],
-            "name":    h["host"],
-            "udf_cpu": cpu_by_host.get(h["hostid"], "") or "N/A",
+            "hostid":      h["hostid"],
+            "name":        h["host"],
+            "udf_cpu":     cpu_by_host.get(h["hostid"], "") or "N/A",
+            "udf_ip":      h.get("interfaces", [{}])[0].get("ip", "N/A"),
+            "udf_os":      os_by_host.get(h["hostid"], "") or "N/A",
+            "udf_mem":     bytes_to_gb(mem_by_host.get(h["hostid"], "")),
+            "udf_hostname": hostname_by_host.get(h["hostid"], "") or "N/A",
+            "udf_status":  STATUS_MAP.get(str(h.get("status", "1")), "Không giám sát"),
         }
         for h in hosts
     ]
@@ -246,7 +325,13 @@ def upsert_to_sdp(records: list[dict], sdp: SDPAPI, dry_run: bool) -> None:
         if dry_run:
             payload = {
                 "name": record["name"],
-                "udf_fields": {"udf_cmdb_3974": record["udf_cpu"]},
+                "udf_fields": {
+                    "udf_cpu":      record["udf_cpu"],
+                    "udf_ip":       record["udf_ip"],
+                    "udf_os":       record["udf_os"],
+                    "udf_mem":      record["udf_mem"],
+                    "udf_hostname": record["udf_hostname"],
+                },
             }
             print(f"  {hostname:<{col}}  {record['udf_cpu']:>8}  [DRY-RUN] {json.dumps(payload)}")
             continue
@@ -284,7 +369,7 @@ def upsert_to_sdp(records: list[dict], sdp: SDPAPI, dry_run: bool) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sync name + udf_cpu from Zabbix group -> SDP CMDB. Match key: name."
+        description="Sync name + CPU + OS + mem + IP + hostname from Zabbix group -> SDP CMDB. Match key: name."
     )
     parser.add_argument("--dry-run", action="store_true",
                         help="Print payloads only. No writes to SDP.")
@@ -293,7 +378,7 @@ def main():
     log.info("=" * 55)
     if args.dry_run:
         log.info("DRY RUN — no writes to SDP.")
-    log.info("Sync: name = host[host]  |  udf_cpu = system.cpu.num[snmp]")
+    log.info("Sync: name | CPU | OS | mem | IP | hostname -> SDP CMDB")
     log.info("=" * 55)
 
     zabbix = ZabbixAPI(ZABBIX_URL, ZABBIX_TOKEN)
@@ -316,13 +401,16 @@ def main():
 
     # ── STEP 3 ──
     host_ids = [h["hostid"] for h in hosts]
-    log.info(f"STEP 3 — Fetching CPU items for {len(host_ids)} hosts...")
-    cpu_items = zabbix.get_cpu_items(host_ids)
-    log.info(f"  {len(cpu_items)} CPU items returned.")
+    log.info(f"STEP 3 — Fetching items for {len(host_ids)} hosts...")
+    cpu_items      = zabbix.get_cpu(host_ids)
+    mem_items      = zabbix.get_mem(host_ids)
+    os_items       = zabbix.get_os(host_ids)
+    hostname_items = zabbix.get_hostname(host_ids)
+    log.info(f"  CPU items: {len(cpu_items)}  |  OS items: {len(os_items)}  |  Mem items: {len(mem_items)}")
 
-    records = build_records(hosts, cpu_items)
+    records = build_records(hosts, cpu_items, os_items, mem_items, hostname_items)
     no_cpu  = sum(1 for r in records if r["udf_cpu"] == "N/A")
-    log.info(f"  With CPU: {len(records) - no_cpu}/{len(records)}  |  Missing: {no_cpu}")
+    log.info(f"  With CPU: {len(records) - no_cpu}/{len(records)}  |  Missing CPU: {no_cpu}")
 
     # ── STEP 4 ──
     log.info(f"STEP 4 — Upserting {len(records)} records to SDP...")
