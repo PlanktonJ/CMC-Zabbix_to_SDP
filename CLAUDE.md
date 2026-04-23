@@ -12,7 +12,7 @@ Syncs Zabbix hosts into ServiceDesk Plus CMDB (module: `cmdb_server_new`).
 Zabbix is the single source of truth.
 
 ## Environment
-- Zabbix URL: `http://172.28.236.10:8080/api_jsonrpc.php`
+- Zabbix URL: `(http://YOUR_ZABBIX_URL/api_jsonrpc.php)`
 - Auth: Zabbix API token (Bearer) — stored in `config.ini` (gitignored)
 - SDP module: `cmdb_server_new`
 - SDP auth: `technician_key` header
