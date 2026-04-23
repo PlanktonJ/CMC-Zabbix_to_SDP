@@ -31,13 +31,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # CONFIG  — fill in before running
 # ──────────────────────────────────────────────
 
-ZABBIX_URL   = "http://172.28.236.10:8080/api_jsonrpc.php"
-ZABBIX_TOKEN = "a8ced8eb0354440a58893bcdefd825d9db76bb01e1c35b2a2ba925e51f662cca"
+ZABBIX_URL   = "p"
+ZABBIX_TOKEN = ""
 
-SDP_URL     = "https://172.28.236.13:8080/api/v3/"
-SDP_API_KEY = "0D8F0D17-C950-4C25-BF3F-2BE8C9FB93BA"
-SDP_PLURAL  = "cmdb_nb_noc_sysapi"
-CMDB_API    = "cmdb_nb_noc_sys"   # SDP CI name field key
+SDP_URL     = ""
+SDP_API_KEY = ""
+SDP_PLURAL  = ""
+CMDB_API    = ""   # SDP CI name field key
 
 # CPU item keys — SNMP_PRIORITY_KEY is preferred when both exist on a host
 ITEM_KEY_CPU_SNMP    = ["system.cpu.num", "system.cpu.num[snmp]"]
