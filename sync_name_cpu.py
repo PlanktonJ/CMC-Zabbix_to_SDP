@@ -31,12 +31,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # CONFIG  — fill in before running
 # ──────────────────────────────────────────────
 
-ZABBIX_URL   = "http://YOUR_ZABBIX_HOST/api_jsonrpc.php"
-ZABBIX_TOKEN = "YOUR_ZABBIX_API_TOKEN"
+ZABBIX_URL   = "http://172.28.236.10:8080/api_jsonrpc.php"
+ZABBIX_TOKEN = "a8ced8eb0354440a58893bcdefd825d9db76bb01e1c35b2a2ba925e51f662cca"
 
-SDP_URL     = "https://YOUR_SDP_HOST/api/v3"
-SDP_API_KEY = "YOUR_SDP_API_KEY"
-SDP_MODULE  = "cmdb_nb_noc_sysapi"
+SDP_URL     = "https://172.28.236.13:8080/api/v3/"
+SDP_API_KEY = "0D8F0D17-C950-4C25-BF3F-2BE8C9FB93BA"
+SDP_PLURAL  = "cmdb_nb_noc_sysapi"
+CMDB_API    = "cmdb_nb_noc_sys"   # SDP CI name field key
 
 # CPU item keys — SNMP_PRIORITY_KEY is preferred when both exist on a host
 ITEM_KEY_CPU_SNMP    = ["system.cpu.num", "system.cpu.num[snmp]"]
@@ -176,18 +177,18 @@ class SDPAPI:
             }
         }
         resp = self.session.get(
-            f"{self.base}/{SDP_MODULE}",
+            f"{self.base}/{SDP_PLURAL}",
             headers=self.headers,
             params=self._wrap(payload),
             timeout=30,
         )
         resp.raise_for_status()
-        ci_list = resp.json().get(SDP_MODULE, [])
+        ci_list = resp.json().get(SDP_PLURAL, [])
         return str(ci_list[0]["id"]) if ci_list else None
 
     def _ci_payload(self, record: dict) -> dict:
         return {
-            SDP_MODULE: {
+            CMDB_API: {
                 "name": record["name"],
                 "udf_fields": {
                     "udf_cpu":                  record["udf_cpu"],
@@ -203,7 +204,7 @@ class SDPAPI:
 
     def update_ci(self, ci_id: str, record: dict) -> dict:
         resp = self.session.put(
-            f"{self.base}/{SDP_MODULE}/{ci_id}",
+            f"{self.base}/{SDP_PLURAL}/{ci_id}",
             headers=self.headers,
             data=self._wrap(self._ci_payload(record)),
             timeout=30,
@@ -213,13 +214,13 @@ class SDPAPI:
 
     def create_ci(self, record: dict) -> str:
         resp = self.session.post(
-            f"{self.base}/{SDP_MODULE}",
+            f"{self.base}/{SDP_PLURAL}",
             headers=self.headers,
             data=self._wrap(self._ci_payload(record)),
             timeout=30,
         )
         resp.raise_for_status()
-        return str(resp.json().get(SDP_MODULE, {}).get("id", "?"))
+        return str(resp.json().get(SDP_PLURAL, {}).get("id", "?"))
 
 
 # ──────────────────────────────────────────────
