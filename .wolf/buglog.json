@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-04-23T04:18:20.995Z",
+      "error_message": "Incorrect value in code",
+      "file": "sync_name_cpu.py",
+      "root_cause": "Had \"{self.base}/{SDP_PLURAL}/{ci_id}\"",
+      "fix": "Changed to \"{self.base}/{self.plural}/{ci_id}\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-23T04:18:20.995Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-04-23T04:18:41.612Z",
+      "error_message": "Significant refactor of ",
+      "file": "sync_name_cpu.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 16→29 lines (2 removed) | Also: python3 sync_name_cpu.py               # interacti; python3 sync_name_cpu.py --dry-run     # print pay",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-04-23T04:19:01.947Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-04-23T04:21:37.113Z",
+      "error_message": "Significant refactor of ",
+      "file": "config.ini",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 5→3 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "ini"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-04-23T04:21:37.113Z"
+    }
+  ]
+}

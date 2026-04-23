@@ -12,11 +12,13 @@ Flow:
             if not found in SDP -> create new CI
 
 Usage:
-  python3 sync_name_cpu.py               # interactive, live upsert
-  python3 sync_name_cpu.py --dry-run     # print payloads, no SDP writes
+  python3 sync_name_cpu.py                          # interactive, live upsert
+  python3 sync_name_cpu.py --dry-run                # print payloads, no SDP writes
+  python3 sync_name_cpu.py --config /path/to/cfg   # use alternate config file
 """
 
 import argparse
+import configparser
 import datetime
 import json
 import logging
@@ -26,18 +28,6 @@ from pathlib import Path
 import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# ──────────────────────────────────────────────
-# CONFIG  — fill in before running
-# ──────────────────────────────────────────────
-
-ZABBIX_URL   = "http://YOUR_ZABBIX_HOST/api_jsonrpc.php"
-ZABBIX_TOKEN = "YOUR_ZABBIX_API_TOKEN"
-
-SDP_URL     = "https://YOUR_SDP_HOST/api/v3/"
-SDP_API_KEY = "YOUR_SDP_API_KEY"
-SDP_PLURAL  = "cmdb_nb_noc_sysapi"
-CMDB_API    = "cmdb_nb_noc_sys"   # SDP CI name field key
 
 # CPU item keys — SNMP_PRIORITY_KEY is preferred when both exist on a host
 ITEM_KEY_CPU_SNMP    = ["system.cpu.num", "system.cpu.num[snmp]"]
@@ -156,8 +146,10 @@ class ZabbixAPI:
 class SDPAPI:
     """SDP CMDB client — upsert CI with name + udf_fields."""
 
-    def __init__(self, base_url: str, api_key: str):
+    def __init__(self, base_url: str, api_key: str, sdp_plural: str, cmdb_api: str):
         self.base    = base_url.rstrip("/")
+        self.plural  = sdp_plural
+        self.ci_key  = cmdb_api
         self.session = requests.Session()
         self.session.verify = False   # internal server — self-signed cert
         self.headers = {"technician_key": api_key}
@@ -177,20 +169,23 @@ class SDPAPI:
             }
         }
         resp = self.session.get(
-            f"{self.base}/{SDP_PLURAL}",
+            f"{self.base}/{self.plural}",
             headers=self.headers,
             params=self._wrap(payload),
             timeout=30,
         )
         resp.raise_for_status()
-        ci_list = resp.json().get(SDP_PLURAL, [])
+        ci_list = resp.json().get(self.plural, [])
         return str(ci_list[0]["id"]) if ci_list else None
 
     def _ci_payload(self, record: dict) -> dict:
+        parsed = parse_name_parts(record["name"])
         return {
-            CMDB_API: {
+            self.ci_key: {
                 "name": record["name"],
+                "site": {"name": parsed["site_name"]},
                 "udf_fields": {
+                    "udf_donvi": parsed["udf_donvi"],
                     "udf_cpu":                  record["udf_cpu"],
                     "udf_ip_private":           record["udf_ip"],
                     "udf_ip_gi_m_s_t":          record["udf_ip"],
@@ -204,7 +199,7 @@ class SDPAPI:
 
     def update_ci(self, ci_id: str, record: dict) -> dict:
         resp = self.session.put(
-            f"{self.base}/{SDP_PLURAL}/{ci_id}",
+            f"{self.base}/{self.plural}/{ci_id}",
             headers=self.headers,
             data=self._wrap(self._ci_payload(record)),
             timeout=30,
@@ -214,13 +209,13 @@ class SDPAPI:
 
     def create_ci(self, record: dict) -> str:
         resp = self.session.post(
-            f"{self.base}/{SDP_PLURAL}",
+            f"{self.base}/{self.plural}",
             headers=self.headers,
             data=self._wrap(self._ci_payload(record)),
             timeout=30,
         )
         resp.raise_for_status()
-        return str(resp.json().get(SDP_PLURAL, {}).get("id", "?"))
+        return str(resp.json().get(self.plural, {}).get("id", "?"))
 
 
 # ──────────────────────────────────────────────
@@ -249,11 +244,38 @@ def prompt_group(groups: list[dict]) -> dict:
 # HELPERS
 # ──────────────────────────────────────────────
 
+SITE_MAP = {
+    "DC":      "HNI",
+    "DR":      "HCM",
+    "CLOUDV1": "CLOUD",
+    "CLOUDV2": "CLOUD",
+    "CMT8": "CMT8",
+    "DNG": "DNG",
+    "DTN": "DTN",
+    "SHTP": "SHTP",
+    "SITE-KH": "SITE-KH",
+    "STP": "STP",
+    "TTN": "TTN",
+    "DT": "HNI"
+}
+
+def parse_name_parts(name: str) -> dict:
+    """Split CI name on '_' and extract udf_donvi (parts[0]) and site (parts[1])."""
+    parts = name.split("_")
+    raw_site = parts[1] if len(parts) > 1 else ""
+    return {
+        "udf_donvi": parts[0] if len(parts) > 0 else "",
+        "site_name": SITE_MAP.get(raw_site.upper(), raw_site),
+    }
+
+
 def bytes_to_gb(value: str) -> str:
     """Convert Zabbix lastvalue (bytes string) to rounded GB string, e.g. '16.00 GB'."""
     try:
-        gb = int(value) / (1024 ** 3)
-        return f"{gb:.2f} GB"
+        raw = int(value)
+        if raw == 0:
+            return "N/A"
+        return f"{raw / (1024 ** 3):.2f} GB"
     except (ValueError, TypeError):
         return "N/A"
 
@@ -295,7 +317,7 @@ def build_records(
         {
             "hostid":      h["hostid"],
             "name":        h["host"],
-            "udf_cpu":     cpu_by_host.get(h["hostid"], "") or "N/A",
+            "udf_cpu":     "N/A" if cpu_by_host.get(h["hostid"], "") in ("", "0") else cpu_by_host[h["hostid"]],
             "udf_ip":      h.get("interfaces", [{}])[0].get("ip", "N/A"),
             "udf_os":      os_by_host.get(h["hostid"], "") or "N/A",
             "udf_mem":     bytes_to_gb(mem_by_host.get(h["hostid"], "")),
@@ -317,7 +339,7 @@ def upsert_to_sdp(records: list[dict], sdp: SDPAPI, dry_run: bool) -> None:
     col = max(col, 30)
 
     print()
-    print(f"  {'name':<{col}}  {'udf_cpu':>8}  result")
+    print(f"  {'name':<{col}}  {'udf_ip':>10}  result")
     print("  " + "-" * (col + 22))
 
     for record in records:
@@ -329,12 +351,17 @@ def upsert_to_sdp(records: list[dict], sdp: SDPAPI, dry_run: bool) -> None:
                 "udf_fields": {
                     "udf_cpu":      record["udf_cpu"],
                     "udf_ip":       record["udf_ip"],
+                    "udf_ip_gi_m_s_t": record["udf_ip"],
                     "udf_os":       record["udf_os"],
                     "udf_mem":      record["udf_mem"],
                     "udf_hostname": record["udf_hostname"],
-                },
+                    "udf_status":   record["udf_status"],
+                    "udf_donvi":    parse_name_parts(record["name"])["udf_donvi"],
+                    "site": {
+                        "name": parse_name_parts(record["name"])["site_name"],
+                },}
             }
-            print(f"  {hostname:<{col}}  {record['udf_cpu']:>8}  [DRY-RUN] {json.dumps(payload)}")
+            print(f"  {hostname:<{col}}  {record['udf_ip']:>8}  [DRY-RUN] {json.dumps(payload)}")
             continue
 
         try:
@@ -343,20 +370,20 @@ def upsert_to_sdp(records: list[dict], sdp: SDPAPI, dry_run: bool) -> None:
             if ci_id is None:
                 new_id = sdp.create_ci(record)
                 stats["created"] += 1
-                print(f"  {hostname:<{col}}  {record['udf_cpu']:>8}  [CREATED] ci_id={new_id}")
+                print(f"  {hostname:<{col}}  {record['udf_ip']:>8}  [CREATED] ci_id={new_id}")
             else:
                 sdp.update_ci(ci_id, record)
                 stats["updated"] += 1
-                print(f"  {hostname:<{col}}  {record['udf_cpu']:>8}  [UPDATED] ci_id={ci_id}")
+                print(f"  {hostname:<{col}}  {record['udf_ip']:>8}  [UPDATED] ci_id={ci_id}")
 
         except requests.HTTPError as e:
             stats["failed"] += 1
             msg = f"HTTP {e.response.status_code} — {e.response.text[:200]}"
-            print(f"  {hostname:<{col}}  {record['udf_cpu']:>8}  [FAILED] {msg}")
+            print(f"  {hostname:<{col}}  {record['udf_ip']:>8}  [FAILED] {msg}")
             log.error(f"[FAILED] {hostname}: {msg}")
         except Exception as e:
             stats["failed"] += 1
-            print(f"  {hostname:<{col}}  {record['udf_cpu']:>8}  [FAILED] {e}")
+            print(f"  {hostname:<{col}}  {record['udf_ip']:>8}  [FAILED] {e}")
             log.exception(f"[FAILED] {hostname}")
 
     print()
@@ -374,7 +401,20 @@ def main():
     )
     parser.add_argument("--dry-run", action="store_true",
                         help="Print payloads only. No writes to SDP.")
+    parser.add_argument("--config", default=str(Path(__file__).parent / "config.ini"),
+                        help="Path to config.ini (default: config.ini next to this script).")
     args = parser.parse_args()
+
+    cfg = configparser.ConfigParser()
+    if not cfg.read(args.config):
+        sys.exit(f"Config file not found: {args.config}")
+
+    zabbix_url   = cfg["zabbix"]["url"]
+    zabbix_token = cfg["zabbix"]["token"]
+    sdp_url      = cfg["sdp"]["url"]
+    sdp_api_key  = cfg["sdp"]["api_key"]
+    sdp_plural   = cfg["sdp"]["sdp_plural"]
+    cmdb_api     = cfg["sdp"]["cmdb_api"]
 
     log.info("=" * 55)
     if args.dry_run:
@@ -382,8 +422,8 @@ def main():
     log.info("Sync: name | CPU | OS | mem | IP | hostname -> SDP CMDB")
     log.info("=" * 55)
 
-    zabbix = ZabbixAPI(ZABBIX_URL, ZABBIX_TOKEN)
-    sdp    = SDPAPI(SDP_URL, SDP_API_KEY)
+    zabbix = ZabbixAPI(zabbix_url, zabbix_token)
+    sdp    = SDPAPI(sdp_url, sdp_api_key, sdp_plural, cmdb_api)
 
     # ── STEP 1 ──
     log.info("STEP 1 — Fetching host groups...")
